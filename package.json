@@ -18,7 +18,7 @@
     "settle": "node --env-file=.env --import tsx src/game/settle-cli.ts",
     "bench:settle": "node --env-file=.env --import tsx src/game/bench.ts",
     "db:reset": "node --env-file=.env --import tsx src/db/reset.ts",
-    "check:m6": "node --env-file=.env --import tsx src/game/check-m6.ts",
+    "check:m6": "node --env-file=.env --import tsx src/game/m6-check.ts",
     "check:m6:steps": "node --env-file=.env --import tsx src/game/m6-steps.ts"
   },
   "dependencies": {
