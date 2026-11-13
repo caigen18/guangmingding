@@ -14,11 +14,17 @@ export interface Envelope<T = unknown> {
   data: T;
 }
 
-export class Hub {
-  private readonly clients = new Set<WebSocket>();
+/** 连接订阅上下文：客户端可带 ?season=&city= 声明关注范围（v1 广播仍全局，前端按 data 过滤）。 */
+export interface ClientContext {
+  seasonId?: string;
+  cityId?: string;
+}
 
-  add(ws: WebSocket): void {
-    this.clients.add(ws);
+export class Hub {
+  private readonly clients = new Map<WebSocket, ClientContext>();
+
+  add(ws: WebSocket, ctx: ClientContext = {}): void {
+    this.clients.set(ws, ctx);
     ws.on('close', () => this.clients.delete(ws));
   }
 
@@ -28,7 +34,7 @@ export class Hub {
 
   broadcast<T>(type: string, data: T): void {
     const msg = JSON.stringify({ type, at: new Date().toISOString(), seq: ++seq, data });
-    for (const ws of this.clients) {
+    for (const ws of this.clients.keys()) {
       if (ws.readyState === ws.OPEN) ws.send(msg);
     }
   }
