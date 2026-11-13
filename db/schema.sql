@@ -179,4 +179,23 @@ CREATE INDEX IF NOT EXISTS trades_to_city_idx ON trades (to_city_id, status);
 CREATE INDEX IF NOT EXISTS trades_from_city_idx ON trades (from_city_id, status);
 CREATE INDEX IF NOT EXISTS ai_calls_created_idx ON ai_calls (created_at);
 
+-- ============================================================
+-- M6 补丁列（幂等）：赛季末结算与破产判定需要的字段
+--   seasons.status 增加 settling（赛季末日结算中）
+--   players.status（alive|bankrupt）、players.titles（跨赛季留称号）
+--   cities.reputation（声望，净资产与称雄条件用）
+-- ============================================================
+ALTER TABLE seasons DROP CONSTRAINT IF EXISTS seasons_status_chk;
+ALTER TABLE seasons ADD CONSTRAINT seasons_status_chk
+  CHECK (status IN ('pending', 'active', 'settling', 'ended'));
+
+ALTER TABLE players ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'alive';
+ALTER TABLE players ADD COLUMN IF NOT EXISTS titles jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE players DROP CONSTRAINT IF EXISTS players_status_chk;
+ALTER TABLE players ADD CONSTRAINT players_status_chk CHECK (status IN ('alive', 'bankrupt'));
+
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS reputation integer NOT NULL DEFAULT 50;
+ALTER TABLE cities DROP CONSTRAINT IF EXISTS cities_reputation_chk;
+ALTER TABLE cities ADD CONSTRAINT cities_reputation_chk CHECK (reputation >= 0);
+
 COMMIT;
