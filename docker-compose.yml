@@ -1,7 +1,7 @@
-# 光明顶 v1 生产编排：db + migrate(一次性) + app + caddy（唯一入口）
+# 光明顶 v1 生产编排：db + migrate(一次性) + app + nginx（唯一入口）
 # 一条命令起全套：./scripts/init-secrets.sh（生成 .secrets/）→ cp .env.example .env → docker compose up -d --build
-# 现状走局域网纯 HTTP（caddy :80 兜底匹配任意 Host，含 IP 直访）；
-# 上云拿到备案域名后，把 caddy/Caddyfile 里的 `:80` 换成 `{$DOMAIN}`，caddy 自动申请并续期 HTTPS。
+# 现状走局域网纯 HTTP（nginx :80，含 IP 直访）；
+# 外网访问走 cloudflared 隧道（免费、给域名、不需公网 IP 与备案）或 Tailscale，HTTPS 由隧道处理，不在 compose 里做。
 
 x-logging: &logging
   driver: json-file
@@ -78,16 +78,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  caddy:
-    image: caddy:2-alpine
+  nginx:
+    image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       app:
         condition: service_healthy
@@ -95,8 +92,6 @@ services:
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:
 
 # 密钥文件（./scripts/init-secrets.sh 生成，0440，属主 1000:1000 = 容器内 node 用户）
 # 挂到容器 /run/secrets/<name>，入口脚本读成环境变量后 exec 应用，不写进 environment。
