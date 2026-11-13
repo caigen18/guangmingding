@@ -17,10 +17,14 @@ WORKDIR /app
 ENV NODE_ENV=production \
     TZ=Asia/Shanghai \
     PORT=3000
+# 部署 sha（issue #26）：build 时由 docker compose 的 build.args 传入，写成文件供 make verify 读
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY db ./db
+RUN printf '%s' "$GIT_SHA" > /app/git-sha && chown node:node /app/git-sha
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 USER node

@@ -5,14 +5,22 @@
 git clone <repo> && cd guangmingding
 cp .env.example .env          # 只填非密钥：POSTGRES_DB/USER、HTTP_PORT、SEASON_DAYS……
 ./scripts/init-secrets.sh     # 生成 .secrets/{db_password,admin_pass,ai_api_key}（0440，git 忽略）
-docker compose up -d --build  # db → migrate(一次性) → app → caddy
+GIT_SHA=$(git rev-parse HEAD) docker compose up -d --build  # db → migrate(一次性) → app → caddy
 ```
 `docker compose ps` 应看到 db healthy、migrate Exited(0)、app healthy、caddy running。
+`GIT_SHA` 会 bake 进镜像（`/app/git-sha` 与 `/healthz` 的 `sha` 字段），供 `make verify` 对部署 sha。
 
 ## 健康检查
 ```bash
-curl -s http://127.0.0.1/healthz     # {"ok":true,"uptimeMs":…,"db":"up"}
+curl -s http://127.0.0.1/healthz     # {"ok":true,"uptimeMs":…,"db":"up","sha":"…"}
 ```
+
+## 验收证据（make verify，issue #26）
+```bash
+make verify   # 一条命令出：sha(仓库+部署) + healthz 原文 + settleDay bench + 11 表 count + migrate 幂等
+```
+需要本机有一个可直连的 Postgres 供 bench 库用（默认 `gmd-pg` 容器、`gmd_bench` 库）；
+可用环境变量 `BENCH_DB_URL` / `PG_CONTAINER` / `PG_USER` / `BENCH_DB` 覆盖。
 
 ## 备份 / 恢复
 ```bash
