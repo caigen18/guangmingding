@@ -28,11 +28,14 @@ JOIN seasons s ON s.season_no = 1
 JOIN players p ON p.name = v.player_name
 ON CONFLICT (season_id, name) DO NOTHING;
 
--- 每城初始两座建筑：农田（产 grain）、市集（开局交易入口）
+-- 每个城市一套基础建筑：农田 5 级（100 人日均耗粮 50，产 60，刚好略有余粮）
 INSERT INTO buildings (city_id, key, level, slot)
-SELECT c.id, b.key, 1, b.slot
+SELECT c.id, b.key, b.level, b.slot
 FROM cities c
-CROSS JOIN (VALUES ('farm', 1), ('market', 2)) AS b (key, slot)
+CROSS JOIN (VALUES
+  ('farm', 1, 5), ('lumberyard', 2, 3), ('quarry', 3, 2),
+  ('mine', 4, 1), ('workshop', 5, 2), ('market', 6, 1)
+) AS b (key, slot, level)
 ON CONFLICT (city_id, key) DO NOTHING;
 
 -- 开市价格（第 1 天，基准价）
