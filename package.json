@@ -20,7 +20,8 @@
     "seed:prod": "node dist/db/seed.js",
     "settle": "node --env-file=.env --import tsx src/game/settle-cli.ts",
     "bench:settle": "node --env-file=.env --import tsx src/game/bench.ts",
-    "db:reset": "node --env-file=.env --import tsx src/db/reset.ts"
+    "db:reset": "node --env-file=.env --import tsx src/db/reset.ts",
+    "check:m6": "node --env-file=.env --import tsx src/game/m6-check.ts"
   },
   "dependencies": {
     "@fastify/static": "^8.0.3",

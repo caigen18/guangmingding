@@ -14,10 +14,10 @@ SELECT '城主' || lpad(n::text, 2, '0')
 FROM generate_series(1, 20) AS n
 ON CONFLICT (name) DO NOTHING;
 
--- 20 座测试城市：5x4 网格，初始人口 100，初始资源相同
+-- 20 座测试城市：5x4 网格，初始人口 100，初始资源相同（银 500 按 #1 开局数值）
 INSERT INTO cities (season_id, player_id, name, x, y, population, happiness, resources)
 SELECT s.id, p.id, v.city_name, v.x, v.y, 100, 60,
-       '{"grain": 120, "wood": 80, "stone": 60, "iron": 20, "cloth": 30}'::jsonb
+       '{"silver": 500, "grain": 120, "wood": 80, "stone": 60, "iron": 20, "cloth": 30}'::jsonb
 FROM (VALUES
   ('金陵', '城主01', 0, 0), ('洛阳', '城主02', 1, 0), ('长安', '城主03', 2, 0), ('扬州', '城主04', 3, 0), ('成都', '城主05', 4, 0),
   ('苏州', '城主06', 0, 1), ('杭州', '城主07', 1, 1), ('开封', '城主08', 2, 1), ('太原', '城主09', 3, 1), ('襄阳', '城主10', 4, 1),
