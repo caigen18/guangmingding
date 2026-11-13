@@ -1,44 +1,41 @@
+/**
+ * /ws —— 原生 ws 挂在 Fastify 同一个 HTTP server 上（不额外开端口）。
+ * 客户端用 /ws?city=<uuid>&season=<number> 声明订阅上下文；连上后先收一帧 connected，
+ * 再收一遍全服城市快照（city.updated，逐城一帧），之后只收增量。
+ */
 import type { FastifyInstance } from 'fastify';
 import { WebSocketServer } from 'ws';
 import { hub } from '../ws/hub.js';
+import { activeSeason, listCitySnapshots } from '../game/city-snapshot.js';
+import { emitCityUpdated } from '../ws/events.js';
 
-/** 把 /ws 挂到 Fastify 同一个 HTTP server（原生 ws，无额外依赖）。 */
 export async function wsRoutes(app: FastifyInstance): Promise<void> {
   const wss = new WebSocketServer({ noServer: true });
 
-  wss.on('connection', (ws, req) => {
-    const url = new URL(req.url ?? '/', 'ws://localhost');
-    hub.add(ws, {
-      seasonId: url.searchParams.get('season') ?? undefined,
-      cityId: url.searchParams.get('city') ?? undefined,
-    });
-    hub.send(ws, 'connected', {
-      clients: hub.size,
-      season: url.searchParams.get('season'),
-      city: url.searchParams.get('city'),
-    });
-
-    ws.on('message', (raw) => {
-      // v1：客户端上行只做 ping/pong 心跳；权威状态走 REST，不做写操作。
-      try {
-        const msg = JSON.parse(String(raw)) as { type?: string };
-        if (msg.type === 'ping') hub.send(ws, 'pong', { t: Date.now() });
-      } catch {
-        /* 忽略非法消息 */
-      }
-    });
+  app.server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    if (url.pathname !== '/ws') return;
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
 
-  // Fastify 在构造时即创建底层 http.Server（app.server），直接挂 upgrade 即可。
-  app.server.on('upgrade', (req, socket, head) => {
-    const { pathname } = new URL(req.url ?? '/', 'ws://localhost');
-    if (pathname !== '/ws') {
-      socket.destroy();
-      return;
+  wss.on('connection', async (ws, req) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const cityId = url.searchParams.get('city') ?? undefined;
+    const rawSeason = Number(url.searchParams.get('season'));
+    const seasonId = Number.isFinite(rawSeason) && rawSeason > 0 ? rawSeason : undefined;
+    hub.add(ws, { cityId, seasonId });
+    hub.send(ws, 'connected', { clients: hub.size, city_id: cityId ?? null });
+
+    // 连接时推全服快照（v1.1 字段），重连=重收快照，不补历史。
+    try {
+      const season = await activeSeason();
+      if (season) {
+        const snaps = await listCitySnapshots(season.id, season.currentDay);
+        for (const snap of snaps) emitCityUpdated(snap);
+      }
+    } catch (err) {
+      app.log.warn({ err }, 'ws snapshot failed');
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req);
-    });
   });
 
   app.addHook('onClose', async () => {

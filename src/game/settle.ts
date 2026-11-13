@@ -27,7 +27,7 @@ import {
   type BuildingKey,
   type Good,
 } from '../config/game.js';
-import { emitCityUpdated, emitDaySettled, emitMarketTick } from '../ws/events.js';
+import { pushSettleEvents } from '../ws/settle-push.js';
 
 export type MarketQuote = { good: Good; price: number; prevPrice: number; deltaPct: number };
 
@@ -493,45 +493,16 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
     }
 
     await client.query('COMMIT');
-    // M8：提交后推 WebSocket 事件（#4 第 6 节）。CLI/bench 进程里 hub 无连接，广播是空操作。
-    const seasonIdNum = Number(seasonId);
-    const grainQuote = market.find((m) => m.good === 'grain');
-    const grainPrice = grainQuote ? grainQuote.price : 0;
-    for (const u of updates) {
-      emitCityUpdated({
-        season_id: seasonIdNum,
-        day,
-        city_id: u.id,
-        population: u.population,
-        happiness: u.happiness,
-        resources: u.resources,
-      });
-    }
-    emitMarketTick({
-      season_id: seasonIdNum,
+    // M8：COMMIT 之后推事件（day.settled / events.arrived / market.tick / city.updated）。
+    // CLI / bench 进程里没有 ws 连接，pushSettleEvents 直接返回。
+    await pushSettleEvents({
+      seasonId: Number(seasonId),
       day,
-      grain_price: grainPrice,
-      quotes: market.map((m) => ({
-        good: m.good,
-        price: m.price,
-        prev_price: m.prevPrice,
-        delta_pct: m.deltaPct,
-      })),
-    });
-    emitDaySettled({
-      season_id: seasonIdNum,
-      day,
-      cities_settled: updates.length,
-      duration_ms: Math.round(performance.now() - startedAt),
-      population_before: round2(populationBefore),
-      population_after: round2(populationAfter),
-      grain_price: grainPrice,
-      market: market.map((m) => ({
-        good: m.good,
-        price: m.price,
-        prev_price: m.prevPrice,
-        delta_pct: m.deltaPct,
-      })),
+      durationMs: Math.round(performance.now() - startedAt),
+      cities: cityLogs,
+      market,
+      bankrupted,
+      season: seasonSummary,
     });
 
     return {
