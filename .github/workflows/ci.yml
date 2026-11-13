@@ -30,7 +30,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: install deps
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
