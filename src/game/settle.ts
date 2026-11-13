@@ -16,6 +16,18 @@ import { performance } from 'node:perf_hooks';
 import { pool } from '../db/pool.js';
 import { closeSeason, type SeasonRankInput, type SeasonSummary } from './season.js';
 import {
+  emitCityUpdated,
+  emitDaySettled,
+  emitMarketTick,
+  type CityDayLog,
+  type CityEventLog,
+  type CityUpdatedData,
+  type DaySettledData,
+  type EventEffects,
+  type MarketQuote,
+  type Severity,
+} from '../ws/events.js';
+import {
   BUILDINGS,
   CONSUMPTION_PER_CAPITA,
   GAME,
@@ -28,44 +40,7 @@ import {
   type Good,
 } from '../config/game.js';
 
-export type MarketQuote = { good: Good; price: number; prevPrice: number; deltaPct: number };
-
-/** 事件效果：全是增量 */
-export type EventEffects = {
-  resources?: Record<string, number>;
-  population?: number;
-  happiness?: number;
-  reputation?: number;
-};
-
-export type CityEventLog = {
-  eventId: string;
-  title: string;
-  severity: string;
-  outcome: 'applied' | 'skipped';
-  choiceKey: string | null;
-  effects: EventEffects | null;
-};
-
-export type CityDayLog = {
-  cityId: string;
-  name: string;
-  player: string | null;
-  playerStatus: string | null;
-  population: { before: number; after: number };
-  happiness: { before: number; after: number };
-  reputation: { before: number; after: number };
-  silver: { before: number; after: number };
-  grain: { before: number; after: number };
-  produced: Record<string, number>;
-  consumed: Record<string, number>;
-  event: CityEventLog | null;
-  starving: boolean;
-  negative: boolean;
-  bankrupt: boolean;
-  bankruptReason: string | null;
-};
-
+// 事件载荷类型（MarketQuote / EventEffects / CityEventLog / CityDayLog）已上收到 src/ws/events.ts，单一来源。
 export type SettleResult = {
   day: number;
   durationMs: number;
@@ -94,6 +69,7 @@ type CityRow = {
   population: number;
   happiness: number;
   reputation: number;
+  version: number;
   resources: Record<string, number> | null;
   buildings: { key: BuildingKey; level: number }[];
 };
@@ -102,7 +78,7 @@ type EventRow = {
   id: string;
   city_id: string;
   title: string;
-  severity: string;
+  severity: Severity;
   choice_key: string | null;
   effects: EventEffects | null;
 };
@@ -173,7 +149,7 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
       `SELECT c.id::text AS id, c.name,
               c.player_id::text AS player_id, p.name AS player, p.status AS player_status,
               c.population::float8 AS population, c.happiness::float8 AS happiness,
-              c.reputation::float8 AS reputation, c.resources,
+              c.reputation::float8 AS reputation, c.version::int AS version, c.resources,
               COALESCE(b.buildings, '[]'::json) AS buildings
          FROM cities c
          LEFT JOIN players p ON p.id = c.player_id
@@ -217,6 +193,7 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
     const eventStatuses: { id: string; status: 'resolved' | 'expired' }[] = [];
     const bankruptPlayers: string[] = [];
     const bankrupted: string[] = [];
+    const cityUpdated: CityUpdatedData[] = [];
     const produced: Record<string, number> = {};
     const consumed: Record<string, number> = {};
     let populationBefore = 0;
@@ -325,6 +302,18 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
         happiness: round2(happiness),
         reputation: round2(reputation),
         resources,
+      });
+
+      cityUpdated.push({
+        season_id: locked.seasonNo,
+        day,
+        city_id: city.id,
+        name: city.name,
+        population: popNext,
+        happiness: round2(happiness),
+        reputation: round2(reputation),
+        resources,
+        version: num(city.version) + 1,
       });
 
       // 6) 破产：银 < 0 且 粮 < 0，连续 GAME.bankruptDays 日
@@ -493,9 +482,25 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
 
     await client.query('COMMIT');
 
+    emitMarketTick({ season_id: locked.seasonNo, day, quotes: market });
+    for (const cu of cityUpdated) emitCityUpdated(cu);
+    const perCity = new Map<string, DaySettledData>();
+    for (const cityLog of cityLogs) {
+      perCity.set(cityLog.cityId, {
+        season_id: locked.seasonNo,
+        day,
+        duration_ms: durationMs,
+        city: cityLog,
+        market,
+        bankrupted,
+        season: seasonSummary,
+      });
+    }
+    emitDaySettled(perCity);
+
     return {
       day,
-      durationMs: Math.round(performance.now() - startedAt),
+      durationMs,
       citiesSettled: updates.length,
       skipped: false,
       totals: { produced, consumed, populationBefore, populationAfter },
