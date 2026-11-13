@@ -45,7 +45,12 @@ type CityRow = {
 };
 
 type Stock = Record<Good, number>;
-type CityUpdate = { id: string; population: number; happiness: number; resources: Stock };
+type CityUpdate = {
+  id: string;
+  population: number;
+  happiness: number;
+  resources: Record<string, number>;
+};
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 const num = (v: unknown): number => {
@@ -112,6 +117,11 @@ export async function settleDay(targetDay?: number): Promise<SettleResult> {
     for (const city of cities.rows) {
       const resources: Stock = { grain: 0, wood: 0, stone: 0, iron: 0, cloth: 0 };
       for (const good of GOODS) resources[good] = round2(num(city.resources?.[good]));
+      // 保留 GOODS 之外的资源键（如银 silver），结算不该抹掉它们
+      const extras: Record<string, number> = {};
+      for (const [key, value] of Object.entries(city.resources ?? {})) {
+        if (!(GOODS as readonly string[]).includes(key)) extras[key] = round2(num(value));
+      }
 
       // 1) 产量
       for (const b of city.buildings) {
@@ -158,7 +168,12 @@ export async function settleDay(targetDay?: number): Promise<SettleResult> {
 
       populationBefore += pop;
       populationAfter += popNext;
-      updates.push({ id: city.id, population: popNext, happiness: round2(happiness), resources });
+      updates.push({
+        id: city.id,
+        population: popNext,
+        happiness: round2(happiness),
+        resources: { ...extras, ...resources },
+      });
     }
 
     // 4) 市场价格（按全服总产量与总人口的日需求）
@@ -198,9 +213,9 @@ export async function settleDay(targetDay?: number): Promise<SettleResult> {
 
     await client.query(
       `INSERT INTO market_prices (season_id, day, good, price, prev_price, delta_pct)
-       SELECT $1, $2, x.good, x.price, x."prevPrice", x."deltaPct"
+       SELECT $1, $2, x.good, x.price, x.\"prevPrice\", x.\"deltaPct\"
          FROM jsonb_to_recordset($3::jsonb)
-              AS x(good text, price numeric, "prevPrice" numeric, "deltaPct" numeric)
+              AS x(good text, price numeric, \"prevPrice\" numeric, \"deltaPct\" numeric)
        ON CONFLICT (season_id, day, good)
        DO UPDATE SET price = EXCLUDED.price,
                      prev_price = EXCLUDED.prev_price,
