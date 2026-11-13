@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: 'postgres://gmd:gmd@127.0.0.1:5432/gmd'
+      NODE_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+
+      # 用 docker 自己起库：services.options 里的带参数 --health-cmd 在 runner 上
+      # 会被拆错（unknown shorthand flag: 'U' in -U），所以改成显式 docker run + 就绪等待
+      - name: start postgres 16
+        run: |
+          docker run -d --name gmd-ci-pg \
+            -e POSTGRES_DB=gmd -e POSTGRES_USER=gmd -e POSTGRES_PASSWORD=gmd \
+            -p 5432:5432 postgres:16
+          for i in $(seq 1 60); do
+            if docker exec gmd-ci-pg pg_isready -U gmd -d gmd >/dev/null 2>&1; then
+              echo "postgres ready after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres not ready"; docker logs gmd-ci-pg; exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # cache: npm 需要 package-lock.json（M6 后丢了），lock 入库后再打开
+
+      - name: install deps（无 package-lock 时回退 npm install）
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - run: npm run lint
+
+      # 类型检查由 build（tsc -p tsconfig.json）覆盖；main 暂无独立 typecheck 脚本
+      - run: npm run build
+
+      # M6 时 migrate:prod / seed:prod 脚本暂未入库，直接用编译产物（幂等，各跑两次验证）
+      - run: node dist/db/migrate.js
+      - run: node dist/db/migrate.js
+      - run: node dist/db/seed.js
+      - run: node dist/db/seed.js
+
+      - name: start and healthz
+        run: |
+          npm run start &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/healthz || true)
+            [ "$code" = "200" ] && { echo "healthz 200"; exit 0; }
+            sleep 1
+          done
+          echo "healthz not ready (last=$code)"; exit 1
