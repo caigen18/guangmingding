@@ -4,6 +4,7 @@ import { ssrRoutes } from '../routes/ssr.js';
 import { adminRoutes } from '../routes/admin.js';
 import { wsRoutes } from '../routes/ws.js';
 import { tradeRoutes } from '../routes/trades.js';
+import { cityRoutes } from '../routes/cities.js';
 import { pool } from '../db/pool.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -12,6 +13,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(ssrRoutes);
   await app.register(adminRoutes);
   await app.register(tradeRoutes);
+  await app.register(cityRoutes);
   await wsRoutes(app);
   app.addHook('onClose', async () => {
     await pool.end();

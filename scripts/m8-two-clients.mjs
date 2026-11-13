@@ -53,8 +53,8 @@ await new Promise((r) => setTimeout(r, 500));
 const tradeReq = {
   from_city_id: cities[0].id,
   to_city_id: cities[1].id,
-  give: [{ good: 'grain', qty: 5 }],
-  take: [{ good: 'wood', qty: 3 }],
+  give: [{ good: 'grain', amount: 5 }],
+  take: [{ good: 'wood', amount: 3 }],
 };
 rec(`A -> HTTP POST /api/trades ${JSON.stringify(tradeReq)}`);
 const tRes = await fetch(`${BASE}/api/trades`, {

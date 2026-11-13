@@ -20,7 +20,7 @@ export interface CityRef {
 
 export interface TradeItem {
   good: string;
-  qty: number;
+  amount: number;
 }
 
 export interface Quote {

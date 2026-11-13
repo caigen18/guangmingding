@@ -28,9 +28,9 @@ interface TradeBody {
 function cleanItems(items: TradeItem[] | undefined): TradeItem[] {
   if (!Array.isArray(items)) return [];
   return items
-    .filter((i) => i && typeof i.good === 'string' && Number.isFinite(Number(i.qty)))
-    .map((i) => ({ good: String(i.good), qty: Number(i.qty) }))
-    .filter((i) => i.qty > 0);
+    .filter((i) => i && typeof i.good === 'string' && Number.isFinite(Number(i.amount)))
+    .map((i) => ({ good: String(i.good), amount: Number(i.amount) }))
+    .filter((i) => i.amount > 0);
 }
 
 async function cityRef(cityId: string): Promise<CityRef | null> {
@@ -178,10 +178,10 @@ export async function tradeRoutes(app: FastifyInstance): Promise<void> {
             const row = byId.get(cityId)!;
             const res = { ...((row.resources ?? {}) as Record<string, number>) };
             for (const i of sub) {
-              if ((res[i.good] ?? 0) < i.qty) return `${cityId} 缺少 ${i.good}`;
-              res[i.good] = Number(((res[i.good] ?? 0) - i.qty).toFixed(2));
+              if ((res[i.good] ?? 0) < i.amount) return `${cityId} 缺少 ${i.good}`;
+              res[i.good] = Number(((res[i.good] ?? 0) - i.amount).toFixed(2));
             }
-            for (const i of add) res[i.good] = Number(((res[i.good] ?? 0) + i.qty).toFixed(2));
+            for (const i of add) res[i.good] = Number(((res[i.good] ?? 0) + i.amount).toFixed(2));
             row.resources = res;
             row.version = Number(row.version) + 1;
             return null;
