@@ -1,0 +1,65 @@
+# 光明顶 v1 生产编排：app + postgres + caddy（自动 HTTPS）
+# 首次起：cp .env.example .env 并填 POSTGRES_PASSWORD、DOMAIN，然后 docker compose up -d --build
+name: gmd
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Shanghai
+      PORT: '3000'
+      DATABASE_URL: 'postgres://${POSTGRES_USER:-gmd}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-gmd}'
+      SEASON_DAYS: '${SEASON_DAYS:-10}'
+      AI_API_KEY: '${AI_API_KEY:-}'
+      AI_MODEL: '${AI_MODEL:-}'
+      AI_AUTO_PUBLISH: '${AI_AUTO_PUBLISH:-false}'
+      ADMIN_USER: '${ADMIN_USER:-admin}'
+      ADMIN_PASS: '${ADMIN_PASS:-}'
+      SEED_ON_BOOT: '${SEED_ON_BOOT:-false}'
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - '3000'
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: '${POSTGRES_DB:-gmd}'
+      POSTGRES_USER: '${POSTGRES_USER:-gmd}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?need POSTGRES_PASSWORD}'
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - '5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-gmd} -d ${POSTGRES_DB:-gmd}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

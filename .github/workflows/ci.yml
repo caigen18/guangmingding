@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: gmd
+          POSTGRES_USER: gmd
+          POSTGRES_PASSWORD: gmd
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd 'pg_isready -U gmd -d gmd'
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: 'postgres://gmd:gmd@127.0.0.1:5432/gmd'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run migrate:prod
+      - run: npm run migrate:prod
+      - run: npm run seed:prod
+      - run: npm run seed:prod
+      - name: start and healthz
+        run: |
+          npm run start &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/healthz || true)
+            [ "$code" = "200" ] && { echo "healthz 200"; exit 0; }
+            sleep 1
+          done
+          echo "healthz not ready (last=$code)"; exit 1
