@@ -1,9 +1,9 @@
 // M8 互通实测：两个独立 WS 客户端（各自订阅一座城），跑真结算 + 真交易，打印全部收发。
-import wsPkg from 'ws';
-const { WebSocket } = wsPkg;
+import WebSocket from 'ws'; // ws 8.23 的 CJS 导出就是类本身，没有 .WebSocket 属性
 import pg from 'pg';
 const { Pool } = pg;
 import fs from 'node:fs';
+import path from 'node:path';
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:3003';
 const log = [];
@@ -85,5 +85,7 @@ const byType = {};
 for (const r of received) (byType[r.type] ??= new Set()).add(r.label);
 rec('---- 汇总（事件 -> 收到的客户端）----');
 for (const [type, set] of Object.entries(byType)) rec(`${type}: ${[...set].sort().join(',')}`);
-fs.writeFileSync('/root/gmd/xz/out/m8-two-clients.log', log.join('\n') + '\n');
-console.log(`\nlog written: /root/gmd/xz/out/m8-two-clients.log (${log.length} lines)`);
+const outPath = process.env.LOG_PATH ?? 'out/m8-two-clients.log';
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
+fs.writeFileSync(outPath, log.join('\n') + '\n');
+console.log(`\nlog written: ${outPath} (${log.length} lines)`);
