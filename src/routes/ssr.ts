@@ -46,7 +46,7 @@ function renderShell(state: GameState): string {
 }
 *{box-sizing:border-box}
 html{background:var(--bg)}
-html,body{margin:0;overflow-x:hidden}
+html,body{margin:0;overflow-x:clip}
 body{
   background:var(--bg); color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
