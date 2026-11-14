@@ -1,8 +1,0 @@
-# 光明顶 v1 唯一入口反向代理。
-# 现状（老板本机/局域网，无备案域名）：`:80` 纯 HTTP，匹配任意 Host（含 IP 直访），不强制跳 HTTPS。
-# 上云拿到备案域名后：把下面 `:80` 改成 `{$DOMAIN}`，caddy 会自动申请并续期证书，80 自动跳 443。
-# caddy 对 WebSocket(/ws) 原生透传，无需额外 upgrade 配置。
-:80 {
-	encode gzip
-	reverse_proxy app:3000
-}
