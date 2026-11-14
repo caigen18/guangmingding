@@ -1,5 +1,7 @@
 -- 光明顶 v1 测试数据：1 个赛季 + 20 个玩家 + 20 个测试城市
 -- 幂等：靠唯一约束 ON CONFLICT DO NOTHING，重复执行不会多出城市。
+-- 初始人口/幸福/资源与开市基准价由 src/db/seed.ts 从 config/game.ts 注入（占位符见下方 INSERT），
+-- 本文件不再硬编码这些常数，保证「改一个数全链路生效」（#17 第 2 步）。
 
 BEGIN;
 
@@ -14,10 +16,10 @@ SELECT '城主' || lpad(n::text, 2, '0')
 FROM generate_series(1, 20) AS n
 ON CONFLICT (name) DO NOTHING;
 
--- 20 座测试城市：5x4 网格，初始人口 100，初始资源相同（银 500 按 #1 开局数值）
+-- 20 座测试城市：5x4 网格，初始人口/幸福/资源从 config/game.ts 注入
 INSERT INTO cities (season_id, player_id, name, x, y, population, happiness, resources)
-SELECT s.id, p.id, v.city_name, v.x, v.y, 100, 60,
-       '{"silver": 500, "grain": 120, "wood": 80, "stone": 60, "iron": 20, "cloth": 30}'::jsonb
+SELECT s.id, p.id, v.city_name, v.x, v.y, __POPULATION__, __HAPPINESS__,
+       __RESOURCES_JSON__::jsonb
 FROM (VALUES
   ('金陵', '城主01', 0, 0), ('洛阳', '城主02', 1, 0), ('长安', '城主03', 2, 0), ('扬州', '城主04', 3, 0), ('成都', '城主05', 4, 0),
   ('苏州', '城主06', 0, 1), ('杭州', '城主07', 1, 1), ('开封', '城主08', 2, 1), ('太原', '城主09', 3, 1), ('襄阳', '城主10', 4, 1),
@@ -28,7 +30,7 @@ JOIN seasons s ON s.season_no = 1
 JOIN players p ON p.name = v.player_name
 ON CONFLICT (season_id, name) DO NOTHING;
 
--- 每个城市一套基础建筑：农田 5 级（100 人日均耗粮 50，产 60，刚好略有余粮）
+-- 每个城市一套基础建筑（等级/槽位是测试数据，与 config 常数无关）
 INSERT INTO buildings (city_id, key, level, slot)
 SELECT c.id, b.key, b.level, b.slot
 FROM cities c
@@ -38,13 +40,11 @@ CROSS JOIN (VALUES
 ) AS b (key, slot, level)
 ON CONFLICT (city_id, key) DO NOTHING;
 
--- 开市价格（第 1 天，基准价）
+-- 开市价格（第 1 天，基准价从 config/game.ts 注入）
 INSERT INTO market_prices (season_id, day, good, price, prev_price, delta_pct)
 SELECT s.id, 1, p.good, p.price, p.price, 0
 FROM seasons s
-CROSS JOIN (VALUES
-  ('grain', 10.00), ('wood', 12.00), ('stone', 14.00), ('iron', 30.00), ('cloth', 18.00)
-) AS p (good, price)
+CROSS JOIN (VALUES __PRICE_VALUES__) AS p (good, price)
 WHERE s.season_no = 1
 ON CONFLICT (season_id, day, good) DO NOTHING;
 

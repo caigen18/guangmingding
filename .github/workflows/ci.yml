@@ -43,6 +43,9 @@ jobs:
       # 类型检查由 build（tsc -p tsconfig.json）覆盖；main 暂无独立 typecheck 脚本
       - run: npm run build
 
+      # M7（#17）：zod 校验自检，缺字段/类型错/超范围三类非法输入都应报错、合法配置应通过
+      - run: node dist/game/m7-check.js
+
       # M6 时 migrate:prod / seed:prod 脚本暂未入库，直接用编译产物（幂等，各跑两次验证）
       - run: node dist/db/migrate.js
       - run: node dist/db/migrate.js
