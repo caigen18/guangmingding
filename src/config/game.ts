@@ -1,31 +1,72 @@
+import { z } from 'zod';
+
 /**
  * 全局配置与游戏常数入口。
- * M7（issue #17）会把这里改成 zod 校验的单一来源，改一个数全链路生效；
- * 目前只收 M5/M6 需要的环境变量和基础常数。
+ * M7（issue #17）：环境变量经 zod 校验（缺字段 / 类型错 / 超范围，启动即报错），
+ * 游戏常数全部集中在本文件，settleDay、seed、接口、前端展示口径都读这一处，改一个数全链路生效。
  */
 
-/** 赛季默认天数（改这里 + SEASON_DAYS 环境变量可覆盖；M7 zod 后收敛为单一来源） */
+/** 赛季默认天数（SEASON_DAYS 环境变量可覆盖） */
 const DEFAULT_SEASON_DAYS = 10;
 
-const env = process.env;
+/**
+ * env 校验 schema —— 每字段：名字 / 单位 / 取值范围。
+ * 缺字段、类型错、超范围会在 import 本文件时直接抛错（启动即失败）。
+ */
+export const envSchema = z.object({
+  /** 数据库连接串（必填，postgres:// 起头） */
+  DATABASE_URL: z
+    .string({ required_error: 'DATABASE_URL 必填' })
+    .min(1, 'DATABASE_URL 必填')
+    .startsWith('postgres://', 'DATABASE_URL 必须以 postgres:// 起头'),
+  /** 端口，单位：无，范围 1–65535 */
+  PORT: z.coerce
+    .number()
+    .int('PORT 必须是整数')
+    .min(1, 'PORT 最小 1')
+    .max(65535, 'PORT 最大 65535')
+    .default(3000),
+  /** 运行环境 */
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** 时区 */
+  TZ: z.string().min(1, 'TZ 必填').default('Asia/Shanghai'),
+  /** 赛季天数，单位：游戏日，范围 >= 1 */
+  SEASON_DAYS: z.coerce
+    .number()
+    .int('SEASON_DAYS 必须是整数')
+    .positive('SEASON_DAYS 必须是正整数')
+    .default(DEFAULT_SEASON_DAYS),
+  /** AI 接口 key（可空 = 模板兜底，不花钱） */
+  AI_API_KEY: z.string().default(''),
+  /** AI 模型名（可空） */
+  AI_MODEL: z.string().default(''),
+  /** 是否自动发布 AI 事件，只接受 true/false */
+  AI_AUTO_PUBLISH: z.enum(['true', 'false']).default('false'),
+  /** 管理账号 */
+  ADMIN_USER: z.string().min(1, 'ADMIN_USER 必填').default('admin'),
+  /** 管理密码（可空） */
+  ADMIN_PASS: z.string().default(''),
+});
+
+const env = envSchema.parse(process.env);
 
 export const config = {
-  databaseUrl: env.DATABASE_URL ?? 'postgres://gmd:gmd_dev_pw@127.0.0.1:55432/gmd',
-  port: Number(env.PORT ?? 3000),
-  nodeEnv: env.NODE_ENV ?? 'development',
-  tz: env.TZ ?? 'Asia/Shanghai',
+  databaseUrl: env.DATABASE_URL,
+  port: env.PORT,
+  nodeEnv: env.NODE_ENV,
+  tz: env.TZ,
   /** 赛季天数：一现实日一游戏日，第 10 日结算后赛季结束（#1 正文 / #2 结论） */
-  seasonDays: Number(env.SEASON_DAYS ?? DEFAULT_SEASON_DAYS),
+  seasonDays: env.SEASON_DAYS,
   ai: {
-    apiKey: env.AI_API_KEY ?? '',
-    model: env.AI_MODEL ?? '',
+    apiKey: env.AI_API_KEY,
+    model: env.AI_MODEL,
     autoPublish: env.AI_AUTO_PUBLISH === 'true',
   },
   admin: {
-    user: env.ADMIN_USER ?? 'admin',
-    pass: env.ADMIN_PASS ?? '',
+    user: env.ADMIN_USER,
+    pass: env.ADMIN_PASS,
   },
-} as const;
+};
 
 /** 货物 key（事件与市场事件里只放 key，中文名走 UI 映射） */
 export const GOODS = ['grain', 'wood', 'stone', 'iron', 'cloth'] as const;
