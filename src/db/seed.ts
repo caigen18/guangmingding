@@ -20,17 +20,18 @@ function renderSeedSql(raw: string): string {
   const priceValues = (Object.keys(MARKET.basePrice) as (keyof typeof MARKET.basePrice)[])
     .map((g) => `('${g}', ${MARKET.basePrice[g].toFixed(2)})`)
     .join(', ');
+
+  // 必须全局替换：占位符在 seed.sql 的注释里也出现过一次，
+  // String.prototype.replace(字符串) 只换第一个匹配，会换掉注释里那个，
+  // 真正的 INSERT 里仍留着 __POPULATION__，Postgres 报 column "__population__" does not exist。
   const rendered = raw
-    .replaceAll('__POPULATION__', String(STARTING_POPULATION))
-    .replaceAll('__HAPPINESS__', String(STARTING_HAPPINESS))
-    .replaceAll('__RESOURCES_JSON__', `'${resourcesJson}'`)
-    .replaceAll('__PRICE_VALUES__', priceValues);
-  // 兜底：任何占位符没被替换就立刻报错，别把 __XXX__ 当列名送到 Postgres（M7 CI 红过一次）
-  const leftover = rendered.match(/__[A-Z][A-Z_]*__/);
-  if (leftover) {
-    const name = leftover[0];
-    throw new Error(`seed: 占位符未被替换 ${name}（检查 db/seed.sql 与 renderSeedSql）`);
-  }
+    .replace(/__POPULATION__/g, () => String(STARTING_POPULATION))
+    .replace(/__HAPPINESS__/g, () => String(STARTING_HAPPINESS))
+    .replace(/__RESOURCES_JSON__/g, () => `'${resourcesJson}'`)
+    .replace(/__PRICE_VALUES__/g, () => priceValues);
+
+  const left = rendered.match(/__[A-Z_]+__/);
+  if (left) throw new Error(`seed.sql 里还有未替换的占位符：${left[0]}`);
   return rendered;
 }
 
