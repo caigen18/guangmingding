@@ -11,8 +11,15 @@ docker compose up -d --build  # db → migrate(一次性) → app → nginx
 
 ## 健康检查
 ```bash
-curl -s http://127.0.0.1/healthz     # {"ok":true,"uptimeMs":…,"db":"up"}
+curl -s http://127.0.0.1/healthz     # {"ok":true,"uptimeMs":…,"db":"up","sha":"<short-sha>"}
 ```
+
+## 部署（tag=commit sha）
+```bash
+./scripts/deploy.sh            # 记录 sha 到 backups/deploy.log → 用 gmd-app:<short-sha> 构建 → up -d
+curl -s http://127.0.0.1/healthz   # 响应里 sha 字段 == 镜像 tag == 本次记录的 short sha
+```
+镜像 tag 用 commit short sha，`/healthz` 回显同值（构建期注入 `GIT_SHA`），出事可凭 sha 复现线上代码。
 
 ## 备份 / 恢复
 ```bash
