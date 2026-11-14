@@ -3,9 +3,16 @@ import { pool } from '../db/pool.js';
 
 const startedAt = Date.now();
 
+const SHA = process.env.GIT_SHA ?? 'unknown';
+
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/healthz', async (_req, reply) => {
-    const body = { ok: true, uptimeMs: Date.now() - startedAt, db: 'up' as 'up' | 'down' };
+    const body = {
+      ok: true,
+      uptimeMs: Date.now() - startedAt,
+      db: 'up' as 'up' | 'down',
+      sha: SHA,
+    };
     try {
       await pool.query('SELECT 1');
     } catch {
