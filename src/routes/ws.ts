@@ -1,13 +1,13 @@
 /**
  * /ws —— 原生 ws 挂在 Fastify 同一个 HTTP server 上（不额外开端口）。
  * 客户端用 /ws?city=<uuid>&season=<number> 声明订阅上下文；连上后先收一帧 connected，
- * 再收一遍全服城市快照（city.updated，逐城一帧），之后只收增量。
+ * 再收一遍全服城市快照（city.updated，逐城一帧，只发给当前 socket，不广播给其他连接），
+ * 之后只收增量。
  */
 import type { FastifyInstance } from 'fastify';
 import { WebSocketServer } from 'ws';
 import { hub } from '../ws/hub.js';
 import { activeSeason, listCitySnapshots } from '../game/city-snapshot.js';
-import { emitCityUpdated } from '../ws/events.js';
 
 export async function wsRoutes(app: FastifyInstance): Promise<void> {
   const wss = new WebSocketServer({ noServer: true });
@@ -26,12 +26,12 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     hub.add(ws, { cityId, seasonId });
     hub.send(ws, 'connected', { clients: hub.size, city_id: cityId ?? null });
 
-    // 连接时推全服快照（v1.1 字段），重连=重收快照，不补历史。
+    // 连接时推全服快照（v1.1 字段），只发给当前 socket，不广播给其他连接。
     try {
       const season = await activeSeason();
       if (season) {
         const snaps = await listCitySnapshots(season.id, season.currentDay);
-        for (const snap of snaps) emitCityUpdated(snap);
+        for (const snap of snaps) hub.send(ws, 'city.updated', snap);
       }
     } catch (err) {
       app.log.warn({ err }, 'ws snapshot failed');

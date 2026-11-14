@@ -2,7 +2,9 @@
  * /api/trades —— 城市间交易（M8 的 trade.incoming / trade.resolved 两个事件的真实触发点）。
  *
  * v1 还没有登录态，接口用 body 里的城市 id 认身份（前端 SSR 页面从 cookie 里带同一份 id）。
- * 生命周期：pending → accepted | declined | cancelled；到期由 expires_day 判定（惰性，不发事件）。
+ * 生命周期：pending → accepted | declined | cancelled | expired。
+ * 到期：expires_day 是最后有效日；currentDay 已过该日即视为过期。任何一方再对过期交易
+ * accept/decline/cancel 都只把它落成 expired，并向双方推 trade.resolved(expired)。
  * 接受时在一个事务里换货，资源不足则 409，不会出现半笔交易。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -107,7 +109,7 @@ export async function tradeRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send({ trade_id: String(trade.id), status: trade.status });
   });
 
-  /** 接受/拒绝/撤回：给双方推 trade.resolved（accepted 时同时换货并推 city.updated）。 */
+  /** 接受/拒绝/撤回/过期：给双方推 trade.resolved（accepted 时同时换货并推 city.updated）。 */
   const resolve = (action: 'accept' | 'decline' | 'cancel') => {
     return async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
@@ -124,6 +126,7 @@ export async function tradeRoutes(app: FastifyInstance): Promise<void> {
       let toCity: CityRef | null = null;
       let give: TradeItem[] = [];
       let take: TradeItem[] = [];
+      let expired = false;
       const touched: CityRow[] = [];
       try {
         await client.query('BEGIN');
@@ -164,53 +167,64 @@ export async function tradeRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(403).send({ error: 'only the sending city can cancel' });
         }
 
-        if (action === 'accept') {
-          // 换货：from 给 give 拿 take，to 给 take 拿 give；任一城不够就整笔回滚。
-          const moved = await client.query(
-            `SELECT id, name, population::float8 AS population, happiness::float8 AS happiness,
-                    reputation::float8 AS reputation, resources, version
-               FROM cities WHERE id = ANY($1::uuid[])`,
-            [[fromCity.city_id, toCity.city_id]],
+        // 到期：expires_day 是最后有效日，currentDay 已过即过期；过期优先于 accept/decline/cancel。
+        if (trade.expires_day < season.currentDay) {
+          await client.query(
+            `UPDATE trades SET status = 'expired', resolved_at = now() WHERE id = $1`,
+            [id],
           );
-          const byId = new Map<string, CityRow>();
-          for (const row of moved.rows as CityRow[]) byId.set(String(row.id), row);
-          const apply = (cityId: string, add: TradeItem[], sub: TradeItem[]) => {
-            const row = byId.get(cityId)!;
-            const res = { ...((row.resources ?? {}) as Record<string, number>) };
-            for (const i of sub) {
-              if ((res[i.good] ?? 0) < i.amount) return `${cityId} 缺少 ${i.good}`;
-              res[i.good] = Number(((res[i.good] ?? 0) - i.amount).toFixed(2));
-            }
-            for (const i of add) res[i.good] = Number(((res[i.good] ?? 0) + i.amount).toFixed(2));
-            row.resources = res;
-            row.version = Number(row.version) + 1;
-            return null;
-          };
-          const shortage = apply(fromCity.city_id, take, give) ?? apply(toCity.city_id, give, take);
-          if (shortage) {
-            await client.query('ROLLBACK');
-            return reply.code(409).send({ error: shortage });
-          }
-          for (const row of byId.values()) {
-            const { rows: updated } = await client.query(
-              `UPDATE cities SET resources = $2::jsonb, version = version + 1, updated_at = now()
-                WHERE id = $1
-                RETURNING id, name, population::float8 AS population, happiness::float8 AS happiness,
-                          reputation::float8 AS reputation, resources, version`,
-              [row.id, JSON.stringify(row.resources)],
+          await client.query('COMMIT');
+          status = 'expired';
+          expired = true;
+        } else {
+          if (action === 'accept') {
+            // 换货：from 给 give 拿 take，to 给 take 拿 give；任一城不够就整笔回滚。
+            const moved = await client.query(
+              `SELECT id, name, population::float8 AS population, happiness::float8 AS happiness,
+                      reputation::float8 AS reputation, resources, version
+                 FROM cities WHERE id = ANY($1::uuid[])`,
+              [[fromCity.city_id, toCity.city_id]],
             );
-            touched.push((updated as CityRow[])[0] as CityRow);
+            const byId = new Map<string, CityRow>();
+            for (const row of moved.rows as CityRow[]) byId.set(String(row.id), row);
+            const apply = (cityId: string, add: TradeItem[], sub: TradeItem[]) => {
+              const row = byId.get(cityId)!;
+              const res = { ...((row.resources ?? {}) as Record<string, number>) };
+              for (const i of sub) {
+                if ((res[i.good] ?? 0) < i.amount) return `${cityId} 缺少 ${i.good}`;
+                res[i.good] = Number(((res[i.good] ?? 0) - i.amount).toFixed(2));
+              }
+              for (const i of add) res[i.good] = Number(((res[i.good] ?? 0) + i.amount).toFixed(2));
+              row.resources = res;
+              row.version = Number(row.version) + 1;
+              return null;
+            };
+            const shortage = apply(fromCity.city_id, take, give) ?? apply(toCity.city_id, give, take);
+            if (shortage) {
+              await client.query('ROLLBACK');
+              return reply.code(409).send({ error: shortage });
+            }
+            for (const row of byId.values()) {
+              const { rows: updated } = await client.query(
+                `UPDATE cities SET resources = $2::jsonb, version = version + 1, updated_at = now()
+                  WHERE id = $1
+                  RETURNING id, name, population::float8 AS population, happiness::float8 AS happiness,
+                            reputation::float8 AS reputation, resources, version`,
+                [row.id, JSON.stringify(row.resources)],
+              );
+              touched.push((updated as CityRow[])[0] as CityRow);
+            }
           }
-        }
 
-        const next: TradeStatus =
-          action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'cancelled';
-        await client.query(
-          `UPDATE trades SET status = $2, resolved_at = now() WHERE id = $1`,
-          [id, next],
-        );
-        await client.query('COMMIT');
-        status = next;
+          const next: TradeStatus =
+            action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'cancelled';
+          await client.query(
+            `UPDATE trades SET status = $2, resolved_at = now() WHERE id = $1`,
+            [id, next],
+          );
+          await client.query('COMMIT');
+          status = next;
+        }
       } catch (err) {
         await client.query('ROLLBACK').catch(() => undefined);
         throw err;
@@ -230,6 +244,7 @@ export async function tradeRoutes(app: FastifyInstance): Promise<void> {
         });
         for (const row of touched) emitCityUpdated(cityUpdatedFromRow(row, season.id, season.currentDay));
       }
+      if (expired) return reply.code(409).send({ error: 'trade expired', trade_id: id });
       return reply.send({ trade_id: id, status });
     };
   };
