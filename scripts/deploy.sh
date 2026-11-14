@@ -29,9 +29,18 @@ BRANCH="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo det
 cd "$COMPOSE_DIR"
 mkdir -p "$(dirname "$DEPLOY_LOG")"
 
-# 部署前记录一条：完整 sha + short + 时间（追加，不覆盖）
-echo "$(date -Is) sha=$SHA short=$SHORT branch=$BRANCH" >> "$DEPLOY_LOG"
-echo "[deploy] $(date -Is) sha=$SHA short=$SHORT branch=$BRANCH"
+# 部署前取当前 app 容器的镜像 tag 作为回滚点（无则留空）
+PREV=""
+APP_CID="$(docker compose ps -q app 2>/dev/null | head -1 || true)"
+if [ -n "$APP_CID" ]; then
+  PREV="$(docker inspect --format '{{.Config.Image}}' "$APP_CID" 2>/dev/null || true)"
+fi
+
+# 部署前记录一条：完整 sha + short + 时间（追加，不覆盖）；有上一镜像时带 prev=
+LOG_LINE="$(date -Is) sha=$SHA short=$SHORT branch=$BRANCH"
+[ -n "$PREV" ] && LOG_LINE="$LOG_LINE prev=$PREV"
+echo "$LOG_LINE" >> "$DEPLOY_LOG"
+echo "[deploy] $LOG_LINE"
 
 # 用 sha 打 tag 构建 + 起全
 export GIT_SHA="$SHORT"
