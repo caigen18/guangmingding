@@ -1,10 +1,20 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { healthRoutes } from '../routes/health.js';
+import { ssrRoutes } from '../routes/ssr.js';
+import { adminRoutes } from '../routes/admin.js';
+import { wsRoutes } from '../routes/ws.js';
+import { tradeRoutes } from '../routes/trades.js';
+import { cityRoutes } from '../routes/cities.js';
 import { pool } from '../db/pool.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
   await app.register(healthRoutes);
+  await app.register(ssrRoutes);
+  await app.register(adminRoutes);
+  await app.register(tradeRoutes);
+  await app.register(cityRoutes);
+  await wsRoutes(app);
   app.addHook('onClose', async () => {
     await pool.end();
   });

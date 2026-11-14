@@ -27,6 +27,7 @@ import {
   type BuildingKey,
   type Good,
 } from '../config/game.js';
+import { pushSettleEvents } from '../ws/settle-push.js';
 
 export type MarketQuote = { good: Good; price: number; prevPrice: number; deltaPct: number };
 
@@ -492,6 +493,17 @@ export async function settleDay(targetDay?: number, opts: SettleOptions = {}): P
     }
 
     await client.query('COMMIT');
+    // M8：COMMIT 之后推事件（day.settled / events.arrived / market.tick / city.updated）。
+    // CLI / bench 进程里没有 ws 连接，pushSettleEvents 直接返回。
+    await pushSettleEvents({
+      seasonId: Number(seasonId),
+      day,
+      durationMs: Math.round(performance.now() - startedAt),
+      cities: cityLogs,
+      market,
+      bankrupted,
+      season: seasonSummary,
+    });
 
     return {
       day,
