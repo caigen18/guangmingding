@@ -23,6 +23,23 @@ npm run dev                   # http://127.0.0.1:3002/healthz（.env 里 PORT=30
 | `npm run lint` | eslint |
 | `npm run typecheck` | tsc --noEmit |
 
+## make verify（P0 门禁 #26）
+
+一条命令打印全部交付证据：commit sha + /healthz 原文 + settleDay bench（p50/p95/max/over_2000ms）+ prod 库 11 张表 count（只读）。先 `npm install`，再：
+
+```bash
+make verify
+```
+
+输出可直接贴进任务评论当证据，不需要手改数字。它：
+
+- 用 `git rev-parse HEAD` 打当前 sha（任何人凭该 sha 复现同一组数）；
+- `curl` 打 `/healthz` 原文；
+- 起一个一次性 `postgres:16` 容器跑 migrate + seed + bench（写操作全在 throwaway 库，不碰 prod），并顺带做 migrate 幂等自检（两次 migrate 前后 11 表 count 一致）；
+- 只读 `docker compose exec db` 数 prod 的 11 张表 count，不做任何写。
+
+可覆盖环境变量（均有安全默认值）：`HEALTHZ_URL`、`PROD_COMPOSE_FILE`（默认 `/root/gmd/prod/docker-compose.yml`）、`PROD_DB_USER`、`PROD_DB_NAME`、`BENCH_IMAGE`、`BENCH_PORT`。
+
 ## 目录
 
 ```
