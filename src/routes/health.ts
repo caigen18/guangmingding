@@ -5,7 +5,12 @@ const startedAt = Date.now();
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/healthz', async (_req, reply) => {
-    const body = { ok: true, uptimeMs: Date.now() - startedAt, db: 'up' as 'up' | 'down' };
+    const body = {
+      ok: true,
+      uptimeMs: Date.now() - startedAt,
+      db: 'up' as 'up' | 'down',
+      sha: process.env.GIT_SHA ?? 'unknown',
+    };
     try {
       await pool.query('SELECT 1');
     } catch {
