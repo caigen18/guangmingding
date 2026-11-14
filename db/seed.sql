@@ -1,6 +1,6 @@
 -- 光明顶 v1 测试数据：1 个赛季 + 20 个玩家 + 20 个测试城市
 -- 幂等：靠唯一约束 ON CONFLICT DO NOTHING，重复执行不会多出城市。
--- 初始人口/幸福/资源与开市基准价由 src/db/seed.ts 从 config/game.ts 注入（__POPULATION__ 等占位符），
+-- 初始人口/幸福/资源与开市基准价由 src/db/seed.ts 从 config/game.ts 注入（占位符见下方 INSERT），
 -- 本文件不再硬编码这些常数，保证「改一个数全链路生效」（#17 第 2 步）。
 
 BEGIN;

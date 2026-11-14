@@ -20,11 +20,18 @@ function renderSeedSql(raw: string): string {
   const priceValues = (Object.keys(MARKET.basePrice) as (keyof typeof MARKET.basePrice)[])
     .map((g) => `('${g}', ${MARKET.basePrice[g].toFixed(2)})`)
     .join(', ');
-  return raw
-    .replace('__POPULATION__', String(STARTING_POPULATION))
-    .replace('__HAPPINESS__', String(STARTING_HAPPINESS))
-    .replace('__RESOURCES_JSON__', `'${resourcesJson}'`)
-    .replace('__PRICE_VALUES__', priceValues);
+  const rendered = raw
+    .replaceAll('__POPULATION__', String(STARTING_POPULATION))
+    .replaceAll('__HAPPINESS__', String(STARTING_HAPPINESS))
+    .replaceAll('__RESOURCES_JSON__', `'${resourcesJson}'`)
+    .replaceAll('__PRICE_VALUES__', priceValues);
+  // 兜底：任何占位符没被替换就立刻报错，别把 __XXX__ 当列名送到 Postgres（M7 CI 红过一次）
+  const leftover = rendered.match(/__[A-Z][A-Z_]*__/);
+  if (leftover) {
+    const name = leftover[0];
+    throw new Error(`seed: 占位符未被替换 ${name}（检查 db/seed.sql 与 renderSeedSql）`);
+  }
+  return rendered;
 }
 
 async function main(): Promise<void> {
