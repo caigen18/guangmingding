@@ -1,8 +1,10 @@
 # 光明顶 v1 后端镜像：多阶段 build → node:20-slim 运行
-# 构建：docker build -t gmd-app .   （生产编排见 docker-compose.yml）
+# 构建：docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t gmd-app:<sha> .
+# 生产编排见 docker-compose.yml
 
 # ---------- 1. 构建阶段：装全量依赖 + tsc 编译 + 剪掉 devDependencies ----------
 FROM node:20-slim AS build
+ARG GIT_SHA=unknown
 WORKDIR /app
 ENV NODE_ENV=development
 COPY package*.json ./
@@ -13,10 +15,13 @@ RUN npm run build && npm prune --omit=dev && npm cache clean --force
 
 # ---------- 2. 运行阶段 ----------
 FROM node:20-slim AS runtime
+# 构建期注入的 commit sha，供 /healthz 回显；不传则 unknown
+ARG GIT_SHA=unknown
 WORKDIR /app
 ENV NODE_ENV=production \
     TZ=Asia/Shanghai \
-    PORT=3000
+    PORT=3000 \
+    GIT_SHA=$GIT_SHA
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
