@@ -48,4 +48,32 @@ CROSS JOIN (VALUES
 WHERE s.season_no = 1
 ON CONFLICT (season_id, day, good) DO NOTHING;
 
+-- 模板事件（M9 AI 生成前的兜底，符合 #4「失败退模板」约定）：机遇 / 代价 / 危机 三张卡
+INSERT INTO events (id, season_id, template_key, title, body, severity, choices, generated_by, created_day)
+VALUES
+  ('00000000-0000-4000-8000-0000000000a1', (SELECT id FROM seasons WHERE season_no = 1),
+   'tpl_good_harvest', '秋收丰饶', '今年的收成格外好，粮商上门高价收购。',
+   'low',
+   '[{"key":"sell_grain","label":"卖出余粮","effects":{"resources":{"silver":150,"grain":-80}}},{"key":"keep_grain","label":"留作储备","effects":{"resources":{"grain":40}}}]'::jsonb,
+   'template', 1),
+  ('00000000-0000-4000-8000-0000000000a2', (SELECT id FROM seasons WHERE season_no = 1),
+   'tpl_wall_repair', '城墙年久失修', '工头来报：再不修缮，雨季城墙怕要塌一段。',
+   'normal',
+   '[{"key":"fund_repair","label":"拨款修缮","effects":{"resources":{"silver":-120},"happiness":6,"reputation":4}},{"key":"postpone","label":"再等等","effects":{"happiness":-6,"reputation":-3}}]'::jsonb,
+   'template', 1),
+  ('00000000-0000-4000-8000-0000000000a3', (SELECT id FROM seasons WHERE season_no = 1),
+   'tpl_locust', '蝗灾压境', '蝗群过境，田里庄稼危在旦夕，百姓人心惶惶。',
+   'high',
+   '[{"key":"open_granary","label":"开仓赈灾","effects":{"resources":{"grain":-100},"reputation":8}},{"key":"shut_gates","label":"紧闭城门","effects":{"population":-3,"happiness":-10,"reputation":-6}}]'::jsonb,
+   'template', 1)
+ON CONFLICT (id) DO NOTHING;
+
+-- 每城当日三张事件卡实例（status='pending'；选卡写 choice_key，结算时执行）
+INSERT INTO city_events (id, city_id, event_id, day, expires_day, status)
+SELECT gen_random_uuid(), c.id, e.id, s.current_day, s.current_day, 'pending'
+FROM cities c
+JOIN seasons s ON s.id = c.season_id
+JOIN events e ON e.season_id = s.id AND e.template_key IN ('tpl_good_harvest','tpl_wall_repair','tpl_locust')
+ON CONFLICT (city_id, day, event_id) DO NOTHING;
+
 COMMIT;
