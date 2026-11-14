@@ -13,7 +13,9 @@ x-app-build: &app-build
   build:
     context: .
     dockerfile: Dockerfile
-  image: gmd-app:local
+    args:
+      GIT_SHA: ${GIT_SHA:-unknown}
+  image: gmd-app:${GIT_SHA:-local}
   logging: *logging
 
 services:

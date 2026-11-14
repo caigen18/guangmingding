@@ -14,9 +14,11 @@ RUN npm run build && npm prune --omit=dev && npm cache clean --force
 # ---------- 2. 运行阶段 ----------
 FROM node:20-slim AS runtime
 WORKDIR /app
+ARG GIT_SHA=unknown
 ENV NODE_ENV=production \
     TZ=Asia/Shanghai \
-    PORT=3000
+    PORT=3000 \
+    GIT_SHA=$GIT_SHA
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
